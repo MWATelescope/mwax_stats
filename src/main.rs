@@ -55,6 +55,13 @@ where
                 .required(true)
                 .help("Sets the metafits file."),
         )
+        .arg(
+            Arg::with_name("output-dir")
+                .short("o")
+                .takes_value(true)
+                .required(true)
+                .help("Specify the directory to write output files to."),
+        )
         .arg(Arg::with_name("fits-files").required(true).multiple(true));
 
     let arg_matches = app.get_matches_from(args);
@@ -63,6 +70,7 @@ where
 
     // Collect inputs from the command line
     let metafits_filename = arg_matches.value_of("metafits").unwrap();
+    let output_dir = arg_matches.value_of("output-dir").unwrap();
     let fits_files: Vec<&str> = arg_matches.values_of("fits-files").unwrap().collect();
 
     // Create correlator context
@@ -71,5 +79,5 @@ where
 
     processing::print_info(&context);
 
-    processing::output_autocorrelations(&context);
+    processing::output_autocorrelations(&context, output_dir);
 }

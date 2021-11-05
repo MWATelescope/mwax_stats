@@ -2,6 +2,7 @@ extern crate file_utils;
 use log::{debug, info};
 use mwalib::{CorrelatorContext, TimeStep};
 use std::fs::File;
+use std::path::Path;
 
 use file_utils::write::Write;
 
@@ -10,15 +11,16 @@ pub fn print_info(context: &CorrelatorContext) {
     info!("Observation: {}", context.metafits_context.obs_id);
 }
 
-/// Outputs one binary file per tile for an observation.
+/// Outputs one binary file for an observation.
 /// Each file is named autos_OBSID_TileID.dat
-/// File format 3 floats * num fine channels per coarse * coarse channels * tiles
-/// [ant]
-///   [fine chan]
+/// File format 3 floats * num fine channels per coarse * coarse channels passed in * tiles:
+/// Slowest moving -> fastest moving
+/// [ant][fine chan freq][XX][YY]
+///
 ///     fine chan freq (MHz)
 ///     XX pow (dB)
 ///     YY pow (dB)
-pub fn output_autocorrelations(context: &CorrelatorContext) {
+pub fn output_autocorrelations(context: &CorrelatorContext, output_dir: &str) {
     info!("Outputting autocorrelations...\n");
 
     // Determine timestep
@@ -33,6 +35,14 @@ pub fn output_autocorrelations(context: &CorrelatorContext) {
         ts.gps_time_ms as f64 / 1000.0
     );
 
+    // Open a file for writing
+    let output_filename = Path::new(output_dir).join(format!(
+        "{}_autos_{}chans.dat",
+        context.metafits_context.obs_id, context.metafits_context.num_corr_fine_chans_per_coarse
+    ));
+
+    let mut output_file = File::create(output_filename).expect("Unable to open file for writing");
+
     // Loop through all of the baselines
     for (bl_index, bl) in context.metafits_context.baselines.iter().enumerate() {
         let ant = &context.metafits_context.antennas[bl.ant1_index];
@@ -43,15 +53,6 @@ pub fn output_autocorrelations(context: &CorrelatorContext) {
                 "Antenna index: {} TileID: {} ({})",
                 bl.ant1_index, ant.tile_id, ant.tile_name
             );
-
-            // Open a file for writing
-            let mut output_file = File::create(format!(
-                "autos_{}_{}_{}.dat",
-                context.metafits_context.obs_id,
-                ant.tile_id,
-                context.metafits_context.num_corr_fine_chans_per_coarse
-            ))
-            .expect("Unable to open file for writing");
 
             // Loop through all coarse channels
             for c_index in &context.common_good_coarse_chan_indices {
