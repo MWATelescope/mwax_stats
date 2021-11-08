@@ -31,10 +31,12 @@ Since `mwax_stats` utilises the `env_logger` and `log` crates, you can set diffe
         * NNN = number of tiles
 
 ### Output format
-* 3 float32s per tile: 
-    * Frequency (MHz)
-    * XX power (dB)
-    * YY power (dB)
+* for each tile: 
+    * for each fine channel:
+        * 3 float32 values:
+            * Frequency (MHz)
+            * XX power (dB)
+            * YY power (dB)
 * Tiles are in "antenna" order
 
 ## Fringes output
@@ -48,10 +50,12 @@ Since `mwax_stats` utilises the `env_logger` and `log` crates, you can set diffe
         * NNN = number of tiles
 
 ### Output format
-* 3 float32 per baseline:
-    * Frequency (MHz)
-    * XX phase (degrees)
-    * YY phase (degrees)
+* for each baseline:    
+    * for each fine channel:
+        * 3 float32 values:
+            * Frequency (MHz)
+            * XX phase (degrees)
+            * YY phase (degrees)
 * Baselines are in lower right triangular order with tile1 vs tile2. Example below for 128 tiles: 
     * 0 v 0 
     * 0 v 1 
