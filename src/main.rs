@@ -1,10 +1,13 @@
 // This Source Code Form is subject to the terms of the Mozilla Public
 // License, v. 2.0. If a copy of the MPL was not distributed with this
 // file, You can obtain one at http://mozilla.org/MPL/2.0/.
+mod autos;
+mod fringes;
+mod processing;
+
 use clap::{crate_authors, crate_description, crate_name, crate_version, App, Arg};
 use log::{debug, info};
 use mwalib::CorrelatorContext;
-mod processing;
 use std::{env, ffi::OsString, fmt::Debug};
 
 /// This is main entry point of the executable.
@@ -79,5 +82,6 @@ where
 
     processing::print_info(&context);
 
-    processing::output_autocorrelations(&context, output_dir);
+    autos::output_autocorrelations(&context, output_dir);
+    fringes::output_fringes(&context, output_dir);
 }

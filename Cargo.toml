@@ -1,6 +1,6 @@
 [package]
 name = "mwax_stats"
-version = "0.1.0"
+version = "0.1.1"
 readme = "README.md"
 homepage = "https://github.com/MWATelescope/mwax_stats"
 repository = "https://github.com/MWATelescope/mwax_stats"
@@ -18,4 +18,4 @@ clap = "2.33"
 env_logger = "0.9"
 file-utils = "0.1.5"
 log = "0.*"
-mwalib = "0.*"
+mwalib = "0.11.*"
