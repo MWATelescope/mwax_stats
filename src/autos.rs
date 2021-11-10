@@ -22,15 +22,23 @@ use std::path::Path;
 pub fn output_autocorrelations(context: &CorrelatorContext, output_dir: &str) {
     info!("Starting output_autocorrelations()...");
 
+    assert_eq!(
+        context.common_good_coarse_chan_indices.len(),
+        1,
+        "output_autocorrelations() requires a single coarse channel only. Got {}",
+        context.common_good_coarse_chan_indices.len()
+    );
+
     // Get data info a buffer
     let data: Vec<f32> = processing::get_data(context);
 
     // Open a file for writing
     let output_filename = Path::new(output_dir).join(format!(
-        "{}_autos_{}chans_{}T.dat",
+        "{}_autos_{}chans_{}T_ch{}.dat",
         context.metafits_context.obs_id,
         context.metafits_context.num_corr_fine_chans_per_coarse,
-        context.metafits_context.num_ants
+        context.metafits_context.num_ants,
+        context.coarse_chans[context.common_good_coarse_chan_indices[0]].rec_chan_number
     ));
 
     let mut output_file =

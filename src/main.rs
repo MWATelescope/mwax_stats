@@ -76,12 +76,18 @@ where
     let output_dir = arg_matches.value_of("output-dir").unwrap();
     let fits_files: Vec<&str> = arg_matches.values_of("fits-files").unwrap().collect();
 
-    // Create correlator context
-    let context = CorrelatorContext::new(&metafits_filename, &fits_files)
-        .expect("Failed to create CorrelatoContext");
+    // Although the command line args support it, and so does `processing::get_data()` we really want to only have 1 coarse channel of data passed in
+    // at this stage. So lets check for it and fail if we get >1 channel
+    if fits_files.len() == 1 {
+        // Create correlator context
+        let context = CorrelatorContext::new(&metafits_filename, &fits_files)
+            .expect("Failed to create CorrelatoContext");
 
-    processing::print_info(&context);
+        processing::print_info(&context);
 
-    autos::output_autocorrelations(&context, output_dir);
-    fringes::output_fringes(&context, output_dir);
+        autos::output_autocorrelations(&context, output_dir);
+        fringes::output_fringes(&context, output_dir);
+    } else {
+        print!("mwax_stats currently only supports a single coarse channel of data. Exiting...")
+    }
 }
