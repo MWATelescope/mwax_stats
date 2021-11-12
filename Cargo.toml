@@ -14,8 +14,9 @@ categories = ["science"]
 exclude = ["tests/*", ".vscode/*", ".github/*"]
 
 [dependencies]
-clap = "2.33"
-env_logger = "0.9"
+clap = "2.*"
+env_logger = "0.9.*"
 file-utils = "0.1.5"
-log = "0.*"
-mwalib = "0.11.*"
+log = "0.4.*"
+mwalib = "0.12.*"
+birli = ">=0.1.9"

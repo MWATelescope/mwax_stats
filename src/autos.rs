@@ -3,7 +3,7 @@
 // file, You can obtain one at http://mozilla.org/MPL/2.0/.
 use crate::processing;
 use file_utils::write::Write;
-use log::{debug, info, trace};
+use log::{info, trace};
 use mwalib::CorrelatorContext;
 use std::fs::File;
 use std::path::Path;
@@ -19,18 +19,38 @@ use std::path::Path;
 ///     fine chan freq (MHz)
 ///     XX pow (dB)
 ///     YY pow (dB)
-pub fn output_autocorrelations(context: &CorrelatorContext, output_dir: &str) {
+pub fn output_autocorrelations(
+    context: &CorrelatorContext,
+    output_dir: &str,
+    use_any_timestep: bool,
+) {
     info!("Starting output_autocorrelations()...");
 
-    assert_eq!(
-        context.common_good_coarse_chan_indices.len(),
-        1,
-        "output_autocorrelations() requires a single coarse channel only. Got {}",
-        context.common_good_coarse_chan_indices.len()
+    // Determine timestep and coarse channel range
+    // For autos we only want the last timestep and one coarse channel
+    let (ts_range, cc_range) =
+        processing::get_timesteps_coarse_chan_ranges(&context, use_any_timestep).unwrap();
+
+    // Get the objects associated with indices
+    let timestep_index = ts_range.end - 1; // range object "end" values are exclusive, so subtract 1!
+    let coarse_chan_index = cc_range.start;
+    let timestep = &context.timesteps[timestep_index];
+    let coarse_chan = &context.coarse_chans[coarse_chan_index];
+
+    // Output what we ended up with
+    info!(
+        "Timestep: index: {} GPS time: {}",
+        timestep_index,
+        timestep.gps_time_ms as f64 / 1000.0
+    );
+
+    info!(
+        "Coarse channel: index: {} Rec Chan: {}",
+        coarse_chan_index, coarse_chan.rec_chan_number
     );
 
     // Get data info a buffer
-    let data: Vec<f32> = processing::get_data(context);
+    let data: Vec<f32> = processing::get_data(context, timestep_index, coarse_chan_index);
 
     // Open a file for writing
     let output_filename = Path::new(output_dir).join(format!(
@@ -38,7 +58,7 @@ pub fn output_autocorrelations(context: &CorrelatorContext, output_dir: &str) {
         context.metafits_context.obs_id,
         context.metafits_context.num_corr_fine_chans_per_coarse,
         context.metafits_context.num_ants,
-        context.coarse_chans[context.common_good_coarse_chan_indices[0]].rec_chan_number
+        coarse_chan.rec_chan_number
     ));
 
     let mut output_file =
@@ -46,74 +66,53 @@ pub fn output_autocorrelations(context: &CorrelatorContext, output_dir: &str) {
 
     // Loop through all of the baselines
     for (bl_index, bl) in context.metafits_context.baselines.iter().enumerate() {
-        let ant = &context.metafits_context.antennas[bl.ant1_index];
-
         // We only care about auto correlations
         if bl.ant1_index == bl.ant2_index {
-            debug!(
-                "Antenna index: {} TileID: {} ({})",
-                bl.ant1_index, ant.tile_id, ant.tile_name
-            );
+            // Establish the starting index for the fine channel frequency array. It is for all channels whether we provided data or not
+            let fine_chan_freq_index =
+                coarse_chan_index * context.metafits_context.num_corr_fine_chans_per_coarse;
 
-            // Loop through all coarse channels
-            for (loop_index, cgcc_index) in
-                context.common_good_coarse_chan_indices.iter().enumerate()
-            {
-                let chan = &context.coarse_chans[*cgcc_index];
+            // Establish the index to this baseline in the data vector
+            let mut data_index: usize = bl_index
+                * (context.metafits_context.num_corr_fine_chans_per_coarse
+                    * context.metafits_context.num_visibility_pols
+                    * 2);
 
-                debug!(
-                    "Coarse chan processed: {} index: {} (rec: {})",
-                    loop_index, *cgcc_index, chan.rec_chan_number
+            // Loop through fine channels
+            for fine_chan in 0..context.metafits_context.num_corr_fine_chans_per_coarse {
+                // Calculate Power in X and Y
+                // data for each fine channel is: xx_r, xx_i, xy_r, xy_i, yx_r, yx_i, yy_r, yy_i
+                let xx_r = data[data_index];
+                let yy_r = data[data_index + 6];
+                let xx_pow: f32 = 10.0 * f32::log10(xx_r + 1.0);
+                let yy_pow: f32 = 10.0 * f32::log10(yy_r + 1.0);
+
+                // Determine fine chan frequency
+                let fine_chan_freq_mhz = (&context.metafits_context.metafits_fine_chan_freqs_hz
+                    [fine_chan_freq_index + fine_chan]
+                    / 1000000.0) as f32;
+
+                trace!(
+                    "ant: {} fine_chan_freq_index {} finech: {} freq: {} MHz xx_r: {} yy_r: {} xx_pow: {} yy_pow: {}",
+                    bl.ant1_index, fine_chan_freq_index, fine_chan, fine_chan_freq_mhz, xx_r, yy_r, xx_pow, yy_pow
                 );
 
-                // Establish the starting index for the fine channel frequency array. It is for all channels whether we provided data or not
-                let fine_chan_freq_index =
-                    *cgcc_index * context.metafits_context.num_corr_fine_chans_per_coarse;
+                // Write data to file
+                output_file
+                    .write_f32(fine_chan_freq_mhz)
+                    .expect("Error writing fine_chan_freq_MHz data");
+                output_file
+                    .write_f32(xx_pow)
+                    .expect("Error writing xx_pow data");
+                output_file
+                    .write_f32(yy_pow)
+                    .expect("Error writing yy_pow data");
 
-                // Establish the index to this baseline in the data vector
-                // The data vector can have N coarse channels so we need to move along by that many floats
-                let mut data_index: usize = (loop_index * &context.num_timestep_coarse_chan_floats)
-                    + bl_index
-                        * (context.metafits_context.num_corr_fine_chans_per_coarse
-                            * context.metafits_context.num_visibility_pols
-                            * 2);
-
-                // Loop through fine channels
-                for fine_chan in 0..context.metafits_context.num_corr_fine_chans_per_coarse {
-                    // Calculate Power in X and Y
-                    // data for each fine channel is: xx_r, xx_i, xy_r, xy_i, yx_r, yx_i, yy_r, yy_i
-                    let xx_r = data[data_index];
-                    let yy_r = data[data_index + 6];
-                    let xx_pow: f32 = 10.0 * f32::log10(xx_r + 1.0);
-                    let yy_pow: f32 = 10.0 * f32::log10(yy_r + 1.0);
-
-                    // Determine fine chan frequency
-                    let fine_chan_freq_mhz = (&context.metafits_context.metafits_fine_chan_freqs_hz
-                        [fine_chan_freq_index + fine_chan]
-                        / 1000000.0) as f32;
-
-                    trace!(
-                        "ant: {} fine_chan_freq_index {} finech: {} freq: {} MHz xx_r: {} yy_r: {} xx_pow: {} yy_pow: {}",
-                        bl.ant1_index, fine_chan_freq_index, fine_chan, fine_chan_freq_mhz, xx_r, yy_r, xx_pow, yy_pow
-                    );
-
-                    // Write data to file
-                    output_file
-                        .write_f32(fine_chan_freq_mhz)
-                        .expect("Error writing fine_chan_freq_MHz data");
-                    output_file
-                        .write_f32(xx_pow)
-                        .expect("Error writing xx_pow data");
-                    output_file
-                        .write_f32(yy_pow)
-                        .expect("Error writing yy_pow data");
-
-                    // Determine index of next data
-                    // [bl][ch][pol][r/i]
-                    // increment from the start of the baseline along the fine channels
-                    // Each fine channel has 4 pols and 2 values
-                    data_index += context.metafits_context.num_visibility_pols * 2;
-                }
+                // Determine index of next data
+                // [bl][ch][pol][r/i]
+                // increment from the start of the baseline along the fine channels
+                // Each fine channel has 4 pols and 2 values
+                data_index += context.metafits_context.num_visibility_pols * 2;
             }
         }
     }

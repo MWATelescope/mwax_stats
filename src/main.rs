@@ -2,6 +2,7 @@
 // License, v. 2.0. If a copy of the MPL was not distributed with this
 // file, You can obtain one at http://mozilla.org/MPL/2.0/.
 mod autos;
+mod errors;
 mod fringes;
 mod processing;
 
@@ -39,7 +40,7 @@ fn main() {
 ///
 /// * 0 on success, non-zero on failure
 ///
-fn main_with_args<I, T>(args: I)
+pub(crate) fn main_with_args<I, T>(args: I)
 where
     I: IntoIterator<Item = T>,
     T: Into<OsString> + Clone,
@@ -65,6 +66,13 @@ where
                 .required(true)
                 .help("Specify the directory to write output files to."),
         )
+        .arg(
+            Arg::with_name("use-any-timestep")
+                .short("t")
+                .takes_value(false)
+                .required(false)
+                .help("Use any timestep if no good (post quaktime) timestep can be found."),
+        )
         .arg(Arg::with_name("fits-files").required(true).multiple(true));
 
     let arg_matches = app.get_matches_from(args);
@@ -74,6 +82,7 @@ where
     // Collect inputs from the command line
     let metafits_filename = arg_matches.value_of("metafits").unwrap();
     let output_dir = arg_matches.value_of("output-dir").unwrap();
+    let use_any_timestep: bool = arg_matches.is_present("use-any-timestep");
     let fits_files: Vec<&str> = arg_matches.values_of("fits-files").unwrap().collect();
 
     // Although the command line args support it, and so does `processing::get_data()` we really want to only have 1 coarse channel of data passed in
@@ -83,10 +92,18 @@ where
         let context = CorrelatorContext::new(&metafits_filename, &fits_files)
             .expect("Failed to create CorrelatoContext");
 
+        // Always print the obs info
         processing::print_info(&context);
 
-        autos::output_autocorrelations(&context, output_dir);
-        fringes::output_fringes(&context, output_dir);
+        // Always produce autocorrelations
+        autos::output_autocorrelations(&context, output_dir, use_any_timestep);
+
+        // Only produce fringes for calibrator observations (unless we are running in debug)
+        if context.metafits_context.calibrator {
+            fringes::output_fringes(&context, output_dir, use_any_timestep, true, true);
+        } else {
+            info!("Skipping output_fringes() as this is not a calibrator observation.");
+        }
     } else {
         print!("mwax_stats currently only supports a single coarse channel of data. Exiting...")
     }

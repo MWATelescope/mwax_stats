@@ -19,18 +19,59 @@ use std::path::Path;
 ///     fine chan freq (MHz)
 ///     phase(XX) (deg)
 ///     phase(YY) (deg)
-pub fn output_fringes(context: &CorrelatorContext, output_dir: &str) {
+pub fn output_fringes(
+    context: &CorrelatorContext,
+    output_dir: &str,
+    use_any_timestep: bool,
+    correct_cable_lengths: bool,
+    correct_geometry: bool,
+) {
     info!("Starting output_fringes()...");
 
-    assert_eq!(
-        context.common_good_coarse_chan_indices.len(),
-        1,
-        "output_fringes() requires a single coarse channel only. Got {}",
-        context.common_good_coarse_chan_indices.len()
+    // Determine timestep and coarse channel range
+    // For fringes we only want all the common good timesteps if possible; and one coarse channel
+    let (timestep_range, coarse_chan_range) =
+        processing::get_timesteps_coarse_chan_ranges(&context, use_any_timestep).unwrap();
+
+    // Output the timestep and coarse channel ranges and debug
+    debug!(
+        "Timesteps   : {} indicies: {}..{}",
+        timestep_range.len(),
+        timestep_range.start,
+        timestep_range.end - 1
+    );
+    debug!(
+        "Coarse chans: {} indicies: {}..{}",
+        coarse_chan_range.len(),
+        coarse_chan_range.start,
+        coarse_chan_range.end - 1
     );
 
-    // Get data info a buffer
-    let data: Vec<f32> = processing::get_data(context);
+    // Get a jones matrix
+    debug!("Generating jones array...");
+    let (mut jones_array, _) =
+        birli::context_to_jones_array(&context, &timestep_range, &coarse_chan_range, None);
+
+    debug!(
+        "Jones array shape (timesteps, fine_chans, baselines){:?}",
+        jones_array.shape()
+    );
+
+    if correct_cable_lengths {
+        debug!("Correcting cable lengths...");
+        birli::corrections::correct_cable_lengths(&context, &mut jones_array, &coarse_chan_range);
+    }
+
+    if correct_geometry {
+        debug!("Correcting geometry...");
+        birli::corrections::correct_geometry(
+            &context,
+            &mut jones_array,
+            &timestep_range,
+            &coarse_chan_range,
+            None,
+        );
+    }
 
     // Open a file for writing
     let output_filename = Path::new(output_dir).join(format!(
@@ -38,81 +79,74 @@ pub fn output_fringes(context: &CorrelatorContext, output_dir: &str) {
         context.metafits_context.obs_id,
         context.metafits_context.num_corr_fine_chans_per_coarse,
         context.metafits_context.num_ants,
-        context.coarse_chans[context.common_good_coarse_chan_indices[0]].rec_chan_number
+        context.coarse_chans[coarse_chan_range.start].rec_chan_number
     ));
 
+    // Establish the starting index for the fine channel frequency array. It is for all channels whether we provided data or not
+    let fine_chan_freq_index =
+        coarse_chan_range.start * context.metafits_context.num_corr_fine_chans_per_coarse;
+
+    // Create output file for writing
     let mut output_file =
         File::create(&output_filename).expect("Unable to open fringe file for writing");
 
     // Loop through all of the baselines
     for (bl_index, bl) in context.metafits_context.baselines.iter().enumerate() {
-        let ant = &context.metafits_context.antennas[bl.ant1_index];
+        // Loop through fine channels
+        for fine_chan_index in 0..context.metafits_context.num_corr_fine_chans_per_coarse {
+            let mut xx_r: f64 = 0.0;
+            let mut xx_i: f64 = 0.0;
+            let mut yy_r: f64 = 0.0;
+            let mut yy_i: f64 = 0.0;
 
-        debug!(
-            "Antenna index: {} TileID: {} ({})",
-            bl.ant1_index, ant.tile_id, ant.tile_name
-        );
+            // Determine fine chan frequency
+            let fine_chan_freq_mhz = (&context.metafits_context.metafits_fine_chan_freqs_hz
+                [fine_chan_freq_index + fine_chan_index]
+                / 1000000.0) as f32;
 
-        // Loop through all coarse channels
-        for (loop_index, cgcc_index) in context.common_good_coarse_chan_indices.iter().enumerate() {
-            let chan = &context.coarse_chans[*cgcc_index];
+            for timestep_loop_index in 0..timestep_range.len() {
+                // The Birli Jones Matrix is in order:
+                // timestep, fine_chan, baseline and then pol
+                let data = jones_array[[timestep_loop_index, fine_chan_index, bl_index]];
 
-            trace!(
-                "Coarse chan: {} (rec: {})",
-                *cgcc_index,
-                chan.rec_chan_number
-            );
-
-            // Establish the starting index for the fine channel frequency array. It is for all channels whether we provided data or not
-            let fine_chan_freq_index =
-                *cgcc_index * context.metafits_context.num_corr_fine_chans_per_coarse;
-
-            // Establish the index to this baseline in the data vector
-            // The data vector can have N coarse channels so we need to move along by that many floats
-            let mut data_index: usize = (loop_index * &context.num_timestep_coarse_chan_floats)
-                + bl_index
-                    * (context.metafits_context.num_corr_fine_chans_per_coarse
-                        * context.metafits_context.num_visibility_pols
-                        * 2);
-
-            // Loop through fine channels
-            for fine_chan in 0..context.metafits_context.num_corr_fine_chans_per_coarse {
                 // Calculate Phase of XX and YY
                 // data for each fine channel is: xx_r, xx_i, xy_r, xy_i, yx_r, yx_i, yy_r, yy_i
-                let xx_r = data[data_index];
-                let xx_i = data[data_index + 1];
-                let yy_r = data[data_index + 6];
-                let yy_i = data[data_index + 7];
-                let xx_phase_deg: f32 = xx_i.atan2(xx_r).to_degrees();
-                let yy_phase_deg: f32 = yy_i.atan2(yy_r).to_degrees();
-
-                // Determine fine chan frequency
-                let fine_chan_freq_mhz = (&context.metafits_context.metafits_fine_chan_freqs_hz
-                    [fine_chan_freq_index + fine_chan]
-                    / 1000000.0) as f32;
-
-                trace!(
-                    "ant: {},{} fine_chan_freq_index {} finech: {} freq: {} MHz xx_r: {} xx_i: {} yy_r: {} yy_i: {} xx_phase: {} yy_phase: {}",
-                    bl.ant1_index, bl.ant2_index, fine_chan_freq_index + fine_chan, fine_chan, fine_chan_freq_mhz, xx_r, xx_i, yy_r, yy_i, xx_phase_deg, yy_phase_deg
-                    );
-
-                // Write data to file
-                output_file
-                    .write_f32(fine_chan_freq_mhz)
-                    .expect("Error writing fine_chan_freq_MHz data");
-                output_file
-                    .write_f32(xx_phase_deg)
-                    .expect("Error writing xx_phase data");
-                output_file
-                    .write_f32(yy_phase_deg)
-                    .expect("Error writing yy_phase data");
-
-                // Determine index of next data
-                // [bl][ch][pol][r/i]
-                // increment from the start of the baseline along the fine channels
-                // Each fine channel has 4 pols and 2 values
-                data_index += context.metafits_context.num_visibility_pols * 2;
+                xx_r += data[0].re as f64;
+                xx_i += data[0].im as f64;
+                yy_r += data[3].re as f64;
+                yy_i += data[3].im as f64;
             }
+
+            let xx_phase_deg: f32 = xx_i.atan2(xx_r).to_degrees() as f32;
+            let yy_phase_deg: f32 = yy_i.atan2(yy_r).to_degrees() as f32;
+
+            if bl_index == 1 {
+                trace!(
+                    "{},{},{},{},{},{},{},{},{},{},{}",
+                    bl.ant1_index,
+                    bl.ant2_index,
+                    fine_chan_freq_index + fine_chan_index,
+                    fine_chan_index,
+                    fine_chan_freq_mhz,
+                    xx_phase_deg,
+                    yy_phase_deg,
+                    xx_r,
+                    xx_i,
+                    yy_r,
+                    yy_i
+                );
+            }
+
+            // Write data to file
+            output_file
+                .write_f32(fine_chan_freq_mhz)
+                .expect("Error writing fine_chan_freq_MHz data");
+            output_file
+                .write_f32(xx_phase_deg)
+                .expect("Error writing xx_phase data");
+            output_file
+                .write_f32(yy_phase_deg)
+                .expect("Error writing yy_phase data");
         }
     }
 
