@@ -2,6 +2,7 @@
 // License, v. 2.0. If a copy of the MPL was not distributed with this
 // file, You can obtain one at http://mozilla.org/MPL/2.0/.
 use crate::processing;
+use birli::VisSelection;
 use file_utils::write::Write;
 use log::{debug, info, trace};
 use mwalib::CorrelatorContext;
@@ -47,10 +48,30 @@ pub fn output_fringes(
         coarse_chan_range.end - 1
     );
 
-    // Get a jones matrix
-    debug!("Generating jones array...");
-    let (mut jones_array, _) =
-        birli::context_to_jones_array(&context, &timestep_range, &coarse_chan_range, None);
+    // Determine which timesteps and coarse channels we want to use
+    let mut vis_sel = VisSelection::from_mwalib(&context).unwrap();
+
+    // Override the timesteps because we only want our single timestep
+    vis_sel.timestep_range = timestep_range.clone();
+
+    // Get number of fine chans
+    let fine_chans_per_coarse = context.metafits_context.num_corr_fine_chans_per_coarse;
+
+    // Allocate jones array
+    let mut jones_array = vis_sel.allocate_jones(fine_chans_per_coarse).unwrap();
+
+    // Allocate flags array
+    let mut flag_array = vis_sel.allocate_flags(fine_chans_per_coarse).unwrap();
+
+    // read visibilities out of the gpubox files
+    vis_sel
+        .read_mwalib(
+            &context,
+            jones_array.view_mut(),
+            flag_array.view_mut(),
+            false,
+        )
+        .unwrap();
 
     debug!(
         "Jones array shape (timesteps, fine_chans, baselines){:?}",
@@ -59,7 +80,12 @@ pub fn output_fringes(
 
     if correct_cable_lengths {
         debug!("Correcting cable lengths...");
-        birli::corrections::correct_cable_lengths(&context, &mut jones_array, &coarse_chan_range);
+        birli::corrections::correct_cable_lengths(
+            &context,
+            &mut jones_array,
+            &coarse_chan_range,
+            false,
+        );
     }
 
     if correct_geometry {
@@ -70,6 +96,8 @@ pub fn output_fringes(
             &timestep_range,
             &coarse_chan_range,
             None,
+            None,
+            false,
         );
     }
 
