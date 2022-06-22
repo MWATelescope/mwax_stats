@@ -1,6 +1,6 @@
 [package]
 name = "mwax_stats"
-version = "0.1.4"
+version = "0.1.5"
 readme = "README.md"
 homepage = "https://github.com/MWATelescope/mwax_stats"
 repository = "https://github.com/MWATelescope/mwax_stats"

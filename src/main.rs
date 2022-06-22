@@ -100,7 +100,20 @@ where
 
         // Only produce fringes for calibrator observations (unless we are running in debug)
         if context.metafits_context.calibrator {
-            fringes::output_fringes(&context, output_dir, use_any_timestep, true, true);
+            let correct_cable_lengths = !context.metafits_context.cable_delays_applied;
+            let correct_geometry: bool = context.metafits_context.geometric_delays_applied
+                == mwalib::GeometricDelaysApplied::No;
+
+            info!("Correcting for cable lengths: {}.", correct_cable_lengths);
+            info!("Correcting for geometry     : {}.", correct_geometry);
+
+            fringes::output_fringes(
+                &context,
+                output_dir,
+                use_any_timestep,
+                correct_cable_lengths,
+                correct_geometry,
+            );
         } else {
             info!("Skipping output_fringes() as this is not a calibrator observation.");
         }
