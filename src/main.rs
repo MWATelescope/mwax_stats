@@ -100,7 +100,8 @@ where
 
         // Only produce fringes for calibrator observations (unless we are running in debug)
         if context.metafits_context.calibrator {
-            let correct_cable_lengths = !context.metafits_context.cable_delays_applied;
+            let correct_cable_lengths: bool = context.metafits_context.cable_delays_applied
+                == mwalib::CableDelaysApplied::NoCableDelaysApplied;
             let correct_geometry: bool = context.metafits_context.geometric_delays_applied
                 == mwalib::GeometricDelaysApplied::No;
 

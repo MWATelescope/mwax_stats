@@ -82,7 +82,7 @@ pub fn output_fringes(
         debug!("Correcting cable lengths...");
         birli::corrections::correct_cable_lengths(
             &context,
-            &mut jones_array,
+            jones_array.view_mut(),
             &coarse_chan_range,
             false,
         );
@@ -92,7 +92,7 @@ pub fn output_fringes(
         debug!("Correcting geometry...");
         birli::corrections::correct_geometry(
             &context,
-            &mut jones_array,
+            jones_array.view_mut(),
             &timestep_range,
             &coarse_chan_range,
             None,
