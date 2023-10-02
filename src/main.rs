@@ -89,7 +89,7 @@ where
     // at this stage. So lets check for it and fail if we get >1 channel
     if fits_files.len() == 1 {
         // Create correlator context
-        let context = CorrelatorContext::new(&metafits_filename, &fits_files)
+        let context = CorrelatorContext::new(metafits_filename, &fits_files)
             .expect("Failed to create CorrelatoContext");
 
         // Always print the obs info
@@ -105,14 +105,21 @@ where
             let correct_geometry: bool = context.metafits_context.geometric_delays_applied
                 == mwalib::GeometricDelaysApplied::No;
 
-            info!("Correcting for cable lengths: {}.", correct_cable_lengths);
-            info!("Correcting for geometry     : {}.", correct_geometry);
+            let correct_passband_gains: bool = true; // This should use oversampled from MetafitsContext when update to use mwalib >=1.0.0
+
+            let correct_digital_gains = true;
+            info!("Correcting for cable lengths : {}.", correct_cable_lengths);
+            info!("Correcting for digital gains : {}.", correct_digital_gains);
+            info!("Correcting for passband gains: {}.", correct_passband_gains);
+            info!("Correcting for geometry      : {}.", correct_geometry);
 
             fringes::output_fringes(
                 &context,
                 output_dir,
                 use_any_timestep,
                 correct_cable_lengths,
+                correct_digital_gains,
+                correct_passband_gains,
                 correct_geometry,
             );
         } else {

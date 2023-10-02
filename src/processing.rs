@@ -1,6 +1,6 @@
 extern crate file_utils;
 use log::{debug, info, trace};
-use mwalib::{CorrelatorContext};
+use mwalib::CorrelatorContext;
 use core::ops::Range;
 use crate::errors::MwaxStatsError;
 
@@ -21,17 +21,15 @@ pub fn print_info(context: &CorrelatorContext) {
 pub fn get_timesteps_coarse_chan_ranges(context: &CorrelatorContext, use_any_timestep: bool) -> Result<(Range<usize>, Range<usize>), MwaxStatsError> {
     if context.num_common_good_timesteps > 0 {
         Ok(((*context.common_good_timestep_indices.first().unwrap()..context.common_good_timestep_indices.last().unwrap() + 1), (*context.common_good_coarse_chan_indices.first().unwrap()..context.common_good_coarse_chan_indices.iter().last().unwrap() + 1)))
-    } else {
-        if use_any_timestep {
-            if context.num_common_timesteps > 0 {
-                Ok(((*context.common_timestep_indices.first().unwrap()..context.common_timestep_indices.last().unwrap() + 1), (*context.common_coarse_chan_indices.first().unwrap()..context.common_coarse_chan_indices.iter().last().unwrap() + 1)))
-            }
-            else {
-                Err(MwaxStatsError::NoCommonGoodTimestepCCFound)
-            }
-        } else {
-            Err(MwaxStatsError::NoCommonTimestepCCFound)
+    } else if use_any_timestep {
+        if context.num_common_timesteps > 0 {
+            Ok(((*context.common_timestep_indices.first().unwrap()..context.common_timestep_indices.last().unwrap() + 1), (*context.common_coarse_chan_indices.first().unwrap()..context.common_coarse_chan_indices.iter().last().unwrap() + 1)))
         }
+        else {
+            Err(MwaxStatsError::NoCommonGoodTimestepCCFound)
+        }
+    } else {
+        Err(MwaxStatsError::NoCommonTimestepCCFound)
     }    
 }
 
@@ -73,7 +71,7 @@ pub fn get_data(
         &context.num_timestep_coarse_chan_bytes, coarse_chan_index
     );
 
-    return data;
+    data
 }
 
 #[cfg(test)]
@@ -86,9 +84,8 @@ mod tests {
     const TEST_MWAX_FITS_FILENAME: &str = "test_files/1244973688_1_timestep/1244973688_20190619100110_ch114_000.fits";
 
     fn get_context() -> Result<CorrelatorContext, mwalib::MwalibError> {
-        let mut filenames = Vec::<&str>::with_capacity(1);
-        filenames.push(TEST_MWAX_FITS_FILENAME);
-        CorrelatorContext::new(&TEST_METAFITS_FILENAME,  &filenames)
+        let filenames = vec![TEST_MWAX_FITS_FILENAME];
+        CorrelatorContext::new(TEST_METAFITS_FILENAME,  &filenames)
     }
 
     #[test]

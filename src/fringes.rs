@@ -2,6 +2,10 @@
 // License, v. 2.0. If a copy of the MPL was not distributed with this
 // file, You can obtain one at http://mozilla.org/MPL/2.0/.
 use crate::processing;
+use birli::corrections::ScrunchType;
+use birli::get_weight_factor;
+use birli::io::read_mwalib;
+use birli::passband_gains::PFB_JAKE_2022_200HZ;
 use birli::VisSelection;
 use file_utils::write::Write;
 use log::{debug, info, trace};
@@ -25,6 +29,8 @@ pub fn output_fringes(
     output_dir: &str,
     use_any_timestep: bool,
     correct_cable_lengths: bool,
+    correct_digital_gains: bool,
+    correct_passband_gains: bool,
     correct_geometry: bool,
 ) {
     info!("Starting output_fringes()...");
@@ -32,7 +38,7 @@ pub fn output_fringes(
     // Determine timestep and coarse channel range
     // For fringes we only want all the common good timesteps if possible; and one coarse channel
     let (timestep_range, coarse_chan_range) =
-        processing::get_timesteps_coarse_chan_ranges(&context, use_any_timestep).unwrap();
+        processing::get_timesteps_coarse_chan_ranges(context, use_any_timestep).unwrap();
 
     // Output the timestep and coarse channel ranges and debug
     debug!(
@@ -49,7 +55,7 @@ pub fn output_fringes(
     );
 
     // Determine which timesteps and coarse channels we want to use
-    let mut vis_sel = VisSelection::from_mwalib(&context).unwrap();
+    let mut vis_sel = VisSelection::from_mwalib(context).unwrap();
 
     // Override the timesteps because we only want our single timestep
     vis_sel.timestep_range = timestep_range.clone();
@@ -63,15 +69,19 @@ pub fn output_fringes(
     // Allocate flags array
     let mut flag_array = vis_sel.allocate_flags(fine_chans_per_coarse).unwrap();
 
+    // Allocate weights array
+    let mut weight_array = vis_sel.allocate_weights(fine_chans_per_coarse).unwrap();
+    weight_array.fill(get_weight_factor(context) as _);
+
     // read visibilities out of the gpubox files
-    vis_sel
-        .read_mwalib(
-            &context,
-            jones_array.view_mut(),
-            flag_array.view_mut(),
-            false,
-        )
-        .unwrap();
+    read_mwalib(
+        &vis_sel,
+        context,
+        jones_array.view_mut(),
+        flag_array.view_mut(),
+        false,
+    )
+    .unwrap();
 
     debug!(
         "Jones array shape (timesteps, fine_chans, baselines){:?}",
@@ -81,17 +91,41 @@ pub fn output_fringes(
     if correct_cable_lengths {
         debug!("Correcting cable lengths...");
         birli::corrections::correct_cable_lengths(
-            &context,
+            context,
             jones_array.view_mut(),
             &coarse_chan_range,
             false,
         );
     }
 
+    if correct_digital_gains {
+        debug!("Correcting digital gains...");
+        let sel_ant_pairs = vis_sel.get_ant_pairs(&context.metafits_context);
+        birli::corrections::correct_digital_gains(
+            context,
+            jones_array.view_mut(),
+            &coarse_chan_range,
+            &sel_ant_pairs,
+        )
+        .unwrap();
+    }
+
+    if correct_passband_gains {
+        debug!("Correcting coarse passband gains...");
+        birli::corrections::correct_coarse_passband_gains(
+            jones_array.view_mut(),
+            weight_array.view_mut(),
+            PFB_JAKE_2022_200HZ,
+            fine_chans_per_coarse,
+            &ScrunchType::from_mwa_version(context.metafits_context.mwa_version.unwrap()).unwrap(),
+        )
+        .unwrap();
+    }
+
     if correct_geometry {
         debug!("Correcting geometry...");
         birli::corrections::correct_geometry(
-            &context,
+            context,
             jones_array.view_mut(),
             &timestep_range,
             &coarse_chan_range,

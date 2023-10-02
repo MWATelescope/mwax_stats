@@ -29,7 +29,7 @@ pub fn output_autocorrelations(
     // Determine timestep and coarse channel range
     // For autos we only want the last timestep and one coarse channel
     let (ts_range, cc_range) =
-        processing::get_timesteps_coarse_chan_ranges(&context, use_any_timestep).unwrap();
+        processing::get_timesteps_coarse_chan_ranges(context, use_any_timestep).unwrap();
 
     // Get the objects associated with indices
     let timestep_index = ts_range.end - 1; // range object "end" values are exclusive, so subtract 1!
