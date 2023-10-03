@@ -2,11 +2,6 @@
 // License, v. 2.0. If a copy of the MPL was not distributed with this
 // file, You can obtain one at http://mozilla.org/MPL/2.0/.
 use crate::processing;
-use birli::corrections::ScrunchType;
-use birli::get_weight_factor;
-use birli::io::read_mwalib;
-use birli::passband_gains::PFB_JAKE_2022_200HZ;
-use birli::VisSelection;
 use file_utils::write::Write;
 use log::{debug, info, trace};
 use mwalib::CorrelatorContext;
@@ -54,86 +49,16 @@ pub fn output_fringes(
         coarse_chan_range.end - 1
     );
 
-    // Determine which timesteps and coarse channels we want to use
-    let mut vis_sel = VisSelection::from_mwalib(context).unwrap();
-
-    // Override the timesteps because we only want our single timestep
-    vis_sel.timestep_range = timestep_range.clone();
-
-    // Get number of fine chans
-    let fine_chans_per_coarse = context.metafits_context.num_corr_fine_chans_per_coarse;
-
-    // Allocate jones array
-    let mut jones_array = vis_sel.allocate_jones(fine_chans_per_coarse).unwrap();
-
-    // Allocate flags array
-    let mut flag_array = vis_sel.allocate_flags(fine_chans_per_coarse).unwrap();
-
-    // Allocate weights array
-    let mut weight_array = vis_sel.allocate_weights(fine_chans_per_coarse).unwrap();
-    weight_array.fill(get_weight_factor(context) as _);
-
-    // read visibilities out of the gpubox files
-    read_mwalib(
-        &vis_sel,
+    // Get data
+    let jones_array = processing::get_corrected_data(
         context,
-        jones_array.view_mut(),
-        flag_array.view_mut(),
-        false,
-    )
-    .unwrap();
-
-    debug!(
-        "Jones array shape (timesteps, fine_chans, baselines){:?}",
-        jones_array.shape()
+        &timestep_range,
+        &coarse_chan_range,
+        correct_cable_lengths,
+        correct_digital_gains,
+        correct_passband_gains,
+        correct_geometry,
     );
-
-    if correct_cable_lengths {
-        debug!("Correcting cable lengths...");
-        birli::corrections::correct_cable_lengths(
-            context,
-            jones_array.view_mut(),
-            &coarse_chan_range,
-            false,
-        );
-    }
-
-    if correct_digital_gains {
-        debug!("Correcting digital gains...");
-        let sel_ant_pairs = vis_sel.get_ant_pairs(&context.metafits_context);
-        birli::corrections::correct_digital_gains(
-            context,
-            jones_array.view_mut(),
-            &coarse_chan_range,
-            &sel_ant_pairs,
-        )
-        .unwrap();
-    }
-
-    if correct_passband_gains {
-        debug!("Correcting coarse passband gains...");
-        birli::corrections::correct_coarse_passband_gains(
-            jones_array.view_mut(),
-            weight_array.view_mut(),
-            PFB_JAKE_2022_200HZ,
-            fine_chans_per_coarse,
-            &ScrunchType::from_mwa_version(context.metafits_context.mwa_version.unwrap()).unwrap(),
-        )
-        .unwrap();
-    }
-
-    if correct_geometry {
-        debug!("Correcting geometry...");
-        birli::corrections::correct_geometry(
-            context,
-            jones_array.view_mut(),
-            &timestep_range,
-            &coarse_chan_range,
-            None,
-            None,
-            false,
-        );
-    }
 
     // Open a file for writing
     let output_filename = Path::new(output_dir).join(format!(

@@ -3,6 +3,12 @@ use log::{debug, info, trace};
 use mwalib::CorrelatorContext;
 use core::ops::Range;
 use crate::errors::MwaxStatsError;
+use birli::corrections::ScrunchType;
+use birli::io::read_mwalib;
+use birli::ndarray::{ArrayBase, Dim, OwnedRepr};
+use birli::passband_gains::PFB_JAKE_2022_200HZ;
+use birli::{get_weight_factor, Jones};
+use birli::VisSelection;
 
 pub fn print_info(context: &CorrelatorContext) {
     trace!("{}", context);
@@ -31,6 +37,106 @@ pub fn get_timesteps_coarse_chan_ranges(context: &CorrelatorContext, use_any_tim
     } else {
         Err(MwaxStatsError::NoCommonTimestepCCFound)
     }    
+}
+
+///
+/// Given a CorrelatorContext and timestep and coarse channel range, along with correction flags, performs the corrections on the data and returns a Jones matrix
+///
+pub fn get_corrected_data(
+    context: &CorrelatorContext,
+    timestep_range: &Range<usize>,
+    coarse_chan_range: &Range<usize>,
+    correct_cable_lengths: bool,
+    correct_digital_gains: bool,
+    correct_passband_gains: bool,
+    correct_geometry: bool,
+) -> ArrayBase<OwnedRepr<Jones<f32>>, Dim<[usize; 3]>> {
+    info!("Correcting data for {} timesteps and {} coarse channels",timestep_range.len(),  coarse_chan_range.len());
+
+    // Determine which timesteps and coarse channels we want to use
+    let mut vis_sel = VisSelection::from_mwalib(context).unwrap();
+
+    // Override the timesteps because we only want our single timestep
+    vis_sel.timestep_range = timestep_range.clone();
+
+    // Get number of fine chans
+    let fine_chans_per_coarse = context.metafits_context.num_corr_fine_chans_per_coarse;
+
+    // Allocate jones array
+    let mut jones_array = vis_sel.allocate_jones(fine_chans_per_coarse).unwrap();
+
+    // Allocate flags array
+    let mut flag_array = vis_sel.allocate_flags(fine_chans_per_coarse).unwrap();
+
+    // Allocate weights array
+    let mut weight_array = vis_sel.allocate_weights(fine_chans_per_coarse).unwrap();
+    weight_array.fill(get_weight_factor(context) as _);
+
+    // read visibilities out of the gpubox files
+    info!("Reading visibilities");
+    read_mwalib(
+        &vis_sel,
+        context,
+        jones_array.view_mut(),
+        flag_array.view_mut(),
+        false,
+    )
+    .unwrap();
+
+    debug!(
+        "Jones array shape (timesteps, fine_chans, baselines){:?}",
+        jones_array.shape()
+    );
+
+    if correct_cable_lengths {
+        debug!("Correcting cable lengths...");
+        birli::corrections::correct_cable_lengths(
+            context,
+            jones_array.view_mut(),
+            coarse_chan_range,
+            false,
+        );
+    }
+
+    if correct_digital_gains {
+        debug!("Correcting digital gains...");
+        let sel_ant_pairs = vis_sel.get_ant_pairs(&context.metafits_context);
+        birli::corrections::correct_digital_gains(
+            context,
+            jones_array.view_mut(),
+            coarse_chan_range,
+            &sel_ant_pairs,
+        )
+        .unwrap();
+    }
+
+    if correct_passband_gains {
+        debug!("Correcting coarse passband gains...");
+        birli::corrections::correct_coarse_passband_gains(
+            jones_array.view_mut(),
+            weight_array.view_mut(),
+            PFB_JAKE_2022_200HZ,
+            fine_chans_per_coarse,
+            &ScrunchType::from_mwa_version(context.metafits_context.mwa_version.unwrap()).unwrap(),
+        )
+        .unwrap();
+    }
+
+    if correct_geometry {
+        debug!("Correcting geometry...");
+        birli::corrections::correct_geometry(
+            context,
+            jones_array.view_mut(),
+            timestep_range,
+            coarse_chan_range,
+            None,
+            None,
+            false,
+        );
+    }
+    info!("Corrections complete");
+
+    jones_array
 }
 
 /// Given a correlator context, read the timestep of the coarse channel provided.
