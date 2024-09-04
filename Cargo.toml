@@ -1,6 +1,6 @@
 [package]
 name = "mwax_stats"
-version = "0.2.0"
+version = "0.2.1"
 readme = "README.md"
 homepage = "https://github.com/MWATelescope/mwax_stats"
 repository = "https://github.com/MWATelescope/mwax_stats"
@@ -16,7 +16,7 @@ exclude = ["tests/*", ".vscode/*", ".github/*"]
 [dependencies]
 clap = "2.*"
 env_logger = "0.9.*"
-file-utils = "0.1.5"
+file-utils = "0.1.*"
 log = "0.4.*"
-mwalib = "0.16.4"
-birli = { version = "0.10.0", default_features = false }
+mwalib = "1.5.0"
+birli = { version = "0.13.0", default-features = false }

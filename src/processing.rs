@@ -90,10 +90,15 @@ pub fn get_corrected_data(
 
     if correct_cable_lengths {
         debug!("Correcting cable lengths...");
+         
+        let baseline_idx_vec= Vec::from_iter(0..context.metafits_context.baselines.len());
+        let baseline_idxs = baseline_idx_vec.as_slice();
+        
         birli::corrections::correct_cable_lengths(
             context,
             jones_array.view_mut(),
             coarse_chan_range,
+            baseline_idxs,
             false,
         );
     }
@@ -127,8 +132,7 @@ pub fn get_corrected_data(
         birli::corrections::correct_geometry(
             context,
             jones_array.view_mut(),
-            timestep_range,
-            coarse_chan_range,
+            &vis_sel,
             None,
             None,
             false,
