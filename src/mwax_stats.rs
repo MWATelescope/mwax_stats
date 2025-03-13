@@ -6,7 +6,7 @@ mod errors;
 mod fringes;
 mod processing;
 
-use clap::{crate_authors, crate_description, crate_name, crate_version, App, Arg};
+use clap::{crate_authors, crate_description, crate_version, App, Arg};
 use log::{debug, info};
 use mwalib::CorrelatorContext;
 use std::{env, ffi::OsString, fmt::Debug};
@@ -48,7 +48,7 @@ where
 {
     debug!("args:\n{:?}", &args);
 
-    let app = App::new(crate_name!())
+    let app = App::new("mwax_stats")
         .version(crate_version!())
         .author(crate_authors!())
         .about(crate_description!())

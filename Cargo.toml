@@ -1,6 +1,6 @@
 [package]
 name = "mwax_stats"
-version = "0.2.1"
+version = "0.3.0"
 readme = "README.md"
 homepage = "https://github.com/MWATelescope/mwax_stats"
 repository = "https://github.com/MWATelescope/mwax_stats"
@@ -13,10 +13,23 @@ keywords = ["radioastronomy", "mwa", "astronomy", "mwalib"]
 categories = ["science"]
 exclude = ["tests/*", ".vscode/*", ".github/*"]
 
+[[bin]]
+name = "mwax_stats"
+path = "src/mwax_stats.rs"
+
+[[bin]]
+name = "mwax_packet_stats"
+path = "src/mwax_packet_stats.rs"
+
 [dependencies]
+anyhow = "1.0.97"
+byteorder = "1.3.4"
 clap = "2.*"
-env_logger = "0.9.*"
+env_logger = "0.11.*"
 file-utils = "0.1.*"
+gethostname = "1.0.0"
 log = "0.4.*"
-mwalib = "1.5.0"
-birli = { version = "0.13.0", default-features = false }
+rayon = "1.10"
+ndarray = { version = "~0.16" }
+mwalib = { version = "1.8.5", features = ["cfitsio-static"] }
+birli = { version = "0.16.0", default-features = false }
