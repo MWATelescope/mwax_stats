@@ -1,12 +1,11 @@
 // This Source Code Form is subject to the terms of the Mozilla Public
 // License, v. 2.0. If a copy of the MPL was not distributed with this
 // file, You can obtain one at http://mozilla.org/MPL/2.0/.
-mod errors;
 mod subfile;
 
 use clap::{crate_authors, crate_description, crate_version, App, Arg};
 use gethostname::gethostname;
-use log::{debug, info};
+use log::debug;
 use std::{env, ffi::OsString, fmt::Debug, path::Path};
 
 /// This is main entry point of the executable.
@@ -18,25 +17,25 @@ use std::{env, ffi::OsString, fmt::Debug, path::Path};
 ///
 /// # Returns
 ///
-/// * 0 on success, non-zero on failure
+/// * None
 ///
 fn main() {
     env_logger::try_init().unwrap_or(());
-    info!("start main");
+    debug!("start main");
     main_with_args(env::args());
-    info!("end main");
+    debug!("end main");
 }
 
 /// This takes any command line arguments, processes them and takes action
 ///
 /// # Arguments
 ///
-/// None
+/// * `args` - command line args for the executable
 ///
 ///
 /// # Returns
 ///
-/// * 0 on success, non-zero on failure
+/// * N/A
 ///
 pub(crate) fn main_with_args<I, T>(args: I)
 where
@@ -76,6 +75,6 @@ where
     let output_dir = arg_matches.value_of("output-dir").unwrap();
     
     // Read Packet stats
-    subfile::get_subfile_packet_map_data(Path::new(subfile_name), Path::new(output_dir), hostname.to_str().unwrap()).expect("Error");    
+    subfile::process_subfile_packet_map_data(Path::new(subfile_name), Path::new(output_dir), hostname.to_str().unwrap()).expect("Error");    
 
 }

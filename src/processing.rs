@@ -1,3 +1,7 @@
+// This Source Code Form is subject to the terms of the Mozilla Public
+// License, v. 2.0. If a copy of the MPL was not distributed with this
+// file, You can obtain one at http://mozilla.org/MPL/2.0/.
+
 extern crate file_utils;
 use log::{debug, info, trace};
 use mwalib::CorrelatorContext;
@@ -185,7 +189,7 @@ pub fn get_data(
 }
 
 #[cfg(test)]
-mod tests {    
+mod tests {
     use birli::CorrelatorContext;
 
     use super::get_timesteps_coarse_chan_ranges;

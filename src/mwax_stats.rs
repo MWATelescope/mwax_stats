@@ -2,9 +2,9 @@
 // License, v. 2.0. If a copy of the MPL was not distributed with this
 // file, You can obtain one at http://mozilla.org/MPL/2.0/.
 mod autos;
-mod errors;
 mod fringes;
 mod processing;
+mod errors;
 
 use clap::{crate_authors, crate_description, crate_version, App, Arg};
 use log::{debug, info};
@@ -20,7 +20,7 @@ use std::{env, ffi::OsString, fmt::Debug};
 ///
 /// # Returns
 ///
-/// * 0 on success, non-zero on failure
+/// * None
 ///
 fn main() {
     env_logger::try_init().unwrap_or(());
@@ -33,12 +33,12 @@ fn main() {
 ///
 /// # Arguments
 ///
-/// None
+/// * `args` - command line args for the executable
 ///
 ///
 /// # Returns
 ///
-/// * 0 on success, non-zero on failure
+/// * None
 ///
 pub(crate) fn main_with_args<I, T>(args: I)
 where
