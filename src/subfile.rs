@@ -18,6 +18,9 @@ const KEY_IDX_PACKET_MAP: &str = "IDX_PACKET_MAP";
 const KEY_NINPUTS: &str = "NINPUTS";
 const KEY_COARSE_CHANNEL: &str = "COARSE_CHANNEL";
 
+/// 
+/// Convenience struct to store the values read from the header
+/// 
 struct PsrdadaHeader {
     map_start_index: u64,
     map_length: usize,
@@ -65,6 +68,25 @@ pub(crate) fn process_subfile_packet_map_data(subfile_name: &Path, output_dir: &
     Ok(())
 }
 
+/// Reads the packet stats from a subfile and places the data into the passed in buffer
+///
+/// # Arguments
+///
+/// * `file` - Mutable reference to the open file handle of the subfile.
+/// 
+/// * `ninputs` - the number of rfinputs in the subfile.
+/// 
+/// * `map_start_index` - the byte index in the block0 data area where the packet stats start.
+/// 
+/// * `map_length` - the number of bytes to read from the block0 data area where the packet stats are stored.
+/// 
+/// * `packets_lost` - a mutable buffer slice of UINT16 data where we will place the read packet stats into.
+/// 
+///
+/// # Returns
+///
+/// * Result - Ok on success (with `packets_lost` buffer populated), or an error on failure
+/// 
 fn read_packet_map(file: &mut File, ninputs: usize, map_start_index: u64, map_length: usize, packets_lost: &mut [u16]) -> Result<(),anyhow::Error> {
     // Allocate a buffer
     let mut buf = vec![0_u8; map_length];
@@ -117,6 +139,17 @@ fn write_packet_stats(packets_lost: &[u16], output_filename: &Path) -> Result<()
     Ok(())
 }
 
+/// Read values from the PSRDADA header of the subfile
+///
+/// # Arguments
+///
+/// * `file` - Mutable reference to the open file handle of the subfile.
+/// 
+///
+/// # Returns
+///
+/// * Result - Ok on success containing a populated `PsrdadaHeader` struct of the values read, or an error on failure
+///
 fn read_psrdada_header(file: &mut File)-> Result<PsrdadaHeader,anyhow::Error> {
     // Read header into local buffer    
     let mut header_buf = [0_u8; PSRDADA_HEADER_LEN];
