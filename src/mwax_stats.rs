@@ -105,7 +105,7 @@ where
             let correct_geometry: bool = context.metafits_context.geometric_delays_applied
                 == mwalib::GeometricDelaysApplied::No;
 
-            let correct_passband_gains: bool = true; // This should use oversampled from MetafitsContext when update to use mwalib >=1.0.0
+            let correct_passband_gains: bool = !context.metafits_context.oversampled;
 
             let correct_digital_gains = true;
             info!("Correcting for cable lengths : {}.", correct_cable_lengths);
