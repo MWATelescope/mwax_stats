@@ -4,15 +4,18 @@
 
 extern crate file_utils;
 use log::{debug, info, trace};
-use mwalib::CorrelatorContext;
+use ndarray::{ArrayBase, Dim, OwnedRepr};
 use core::ops::Range;
 use crate::errors::MwaxStatsError;
-use birli::corrections::ScrunchType;
-use birli::io::read_mwalib;
-use birli::ndarray::{ArrayBase, Dim, OwnedRepr};
-use birli::passband_gains::PFB_JAKE_2022_200HZ;
-use birli::{get_weight_factor, Jones};
-use birli::VisSelection;
+use birli::{
+    flag_to_weight_array, flags::get_weight_factor, io::{read_mwalib}, marlu::{
+        constants::{
+            MWA_HEIGHT_M, MWA_LAT_RAD, MWA_LONG_RAD,
+        },
+        mwalib::CorrelatorContext,
+        LatLngHeight, RADec,
+    }, FlagContext, Jones, PreprocessContext, VisSelection
+};
 
 pub fn print_info(context: &CorrelatorContext) {
     trace!("{}", context);
@@ -66,16 +69,25 @@ pub fn get_corrected_data(
     // Get number of fine chans
     let fine_chans_per_coarse = context.metafits_context.num_corr_fine_chans_per_coarse;
 
-    // Allocate jones array
-    let mut jones_array = vis_sel.allocate_jones(fine_chans_per_coarse).unwrap();
+    // Setup flag context
+    let flag_ctx = FlagContext::from_mwalib(context);
 
     // Allocate flags array
     let mut flag_array = vis_sel.allocate_flags(fine_chans_per_coarse).unwrap();
 
-    // Allocate weights array
-    let mut weight_array = vis_sel.allocate_weights(fine_chans_per_coarse).unwrap();
-    weight_array.fill(get_weight_factor(context) as _);
+    // Set the flags
+    flag_ctx
+        .set_flags(
+            flag_array.view_mut(),
+            &vis_sel.timestep_range,
+            &vis_sel.coarse_chan_range,
+            &vis_sel.get_ant_pairs(&context.metafits_context),
+        )
+        .unwrap();
 
+    // Allocate jones array
+    let mut jones_array = vis_sel.allocate_jones(fine_chans_per_coarse).unwrap();
+    
     // read visibilities out of the gpubox files
     info!("Reading visibilities");
     read_mwalib(
@@ -92,58 +104,47 @@ pub fn get_corrected_data(
         jones_array.shape()
     );
 
-    if correct_cable_lengths {
-        debug!("Correcting cable lengths...");
-         
-        let baseline_idx_vec= Vec::from_iter(0..context.metafits_context.baselines.len());
-        let baseline_idxs = baseline_idx_vec.as_slice();
-        
-        birli::corrections::correct_cable_lengths(
-            context,
-            jones_array.view_mut(),
-            coarse_chan_range,
-            baseline_idxs,
-            false,
-        );
-    }
+    // Allocate weights array    
+    let weight_factor = get_weight_factor(context);
+    let mut weight_array = flag_to_weight_array(flag_array.view(), weight_factor);
 
-    if correct_digital_gains {
-        debug!("Correcting digital gains...");
-        let sel_ant_pairs = vis_sel.get_ant_pairs(&context.metafits_context);
-        birli::corrections::correct_digital_gains(
-            context,
-            jones_array.view_mut(),
-            coarse_chan_range,
-            &sel_ant_pairs,
-        )
-        .unwrap();
-    }
+    let prep_ctx = PreprocessContext {
+        array_pos: LatLngHeight {
+            longitude_rad: MWA_LONG_RAD,
+            latitude_rad: MWA_LAT_RAD,
+            height_metres: MWA_HEIGHT_M,
+        },
+        phase_centre: RADec::from_mwalib_phase_or_pointing(&context.metafits_context),
+        correct_van_vleck: false,
+        correct_cable_lengths,
+        correct_digital_gains,
+        correct_geometry,
+        draw_progress: false,
+        passband_gains: match correct_passband_gains {
+            true => {
+                        match context.metafits_context.oversampled {
+                            true => Some(birli::passband_gains::OSPFB_JAKE_2025_200HZ),
+                            _ => Some(birli::passband_gains::PFB_JAKE_2022_200HZ)
+                        }
+                    },
+            _ => None
+        },
+        calsols: None,        
+        aoflagger_strategy: None,
+    };
 
-    if correct_passband_gains {
-        debug!("Correcting coarse passband gains...");
-        birli::corrections::correct_coarse_passband_gains(
+    prep_ctx
+        .preprocess(
+            context,
             jones_array.view_mut(),
             weight_array.view_mut(),
-            PFB_JAKE_2022_200HZ,
-            fine_chans_per_coarse,
-            &ScrunchType::from_mwa_version(context.metafits_context.mwa_version.unwrap()).unwrap(),
+            flag_array.view_mut(),
+            &vis_sel,
         )
         .unwrap();
-    }
 
-    if correct_geometry {
-        debug!("Correcting geometry...");
-        birli::corrections::correct_geometry(
-            context,
-            jones_array.view_mut(),
-            &vis_sel,
-            None,
-            None,
-            false,
-        );
-    }
     info!("Corrections complete");
-
+    
     jones_array
 }
 
