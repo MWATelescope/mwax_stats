@@ -31,4 +31,4 @@ log = "0.4.*"
 rayon = "1.10"
 ndarray = { version = "~0.16" }
 mwalib = { version = "1.8.7", features = ["cfitsio-static"] }
-birli = { version = "0.18.0", features = ["aoflagger", "cfitsio-static"] }
+birli = { version = "0.18.0", features = ["cfitsio-static"] }

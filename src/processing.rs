@@ -130,7 +130,6 @@ pub fn get_corrected_data(
             _ => None
         },
         calsols: None,        
-        aoflagger_strategy: None,
     };
 
     prep_ctx
