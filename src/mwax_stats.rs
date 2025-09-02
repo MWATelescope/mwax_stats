@@ -2,9 +2,9 @@
 // License, v. 2.0. If a copy of the MPL was not distributed with this
 // file, You can obtain one at http://mozilla.org/MPL/2.0/.
 mod autos;
+mod errors;
 mod fringes;
 mod processing;
-mod errors;
 
 use clap::{crate_authors, crate_description, crate_version, App, Arg};
 use log::{debug, info};
@@ -105,7 +105,7 @@ where
             let correct_geometry: bool = context.metafits_context.geometric_delays_applied
                 == mwalib::GeometricDelaysApplied::No;
 
-            let correct_passband_gains: bool = !context.metafits_context.oversampled;
+            let correct_passband_gains: bool = !context.metafits_context.deripple_applied;
 
             let correct_digital_gains = true;
             info!("Correcting for cable lengths : {}.", correct_cable_lengths);
