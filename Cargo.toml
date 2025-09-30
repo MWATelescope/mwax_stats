@@ -1,6 +1,6 @@
 [package]
 name = "mwax_stats"
-version = "0.4.1"
+version = "0.4.2"
 readme = "README.md"
 homepage = "https://github.com/MWATelescope/mwax_stats"
 repository = "https://github.com/MWATelescope/mwax_stats"
@@ -31,4 +31,4 @@ log = "0.4.*"
 rayon = "1.10"
 ndarray = { version = "~0.16" }
 mwalib = { version = "1.8.7", features = ["cfitsio-static"] }
-birli = { version = "0.18.1", features = ["cfitsio-static"] }
+birli = { version = "0.18.2", features = ["cfitsio-static"] }

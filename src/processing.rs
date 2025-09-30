@@ -8,7 +8,7 @@ use ndarray::{ArrayBase, Dim, OwnedRepr};
 use core::ops::Range;
 use crate::errors::MwaxStatsError;
 use birli::{
-    flag_to_weight_array, flags::get_weight_factor, io::{read_mwalib}, marlu::{
+    flag_to_weight_array, flags::get_weight_factor, io::read_mwalib, marlu::{
         constants::{
             MWA_HEIGHT_M, MWA_LAT_RAD, MWA_LONG_RAD,
         },
@@ -27,23 +27,68 @@ pub fn print_info(context: &CorrelatorContext) {
     info!("Common Coarse chans     : {:?}", context.common_coarse_chan_indices);
 }
 
+pub fn bytes_to_gigabytes(bytes_value: usize) -> f32 {
+    bytes_value as f32 / (1000.0 * 1000.0 * 1000.0)
+}
+
+pub fn gigabytes_to_bytes(gigabytes_value: f32) -> usize {
+    (gigabytes_value * (1000.0 * 1000.0 * 1000.0)) as usize
+}
+
 /// Get a range of timesteps/coarse channels
 /// Returns a result containing a Range of timestep indices and a Range of Coarse channel indices
 /// Will preferably try to get the common good timesteps/coarse channels. If use_any_timesteps is True it
 /// will defer to common timesteps/coarse channels if no common good exist.
-pub fn get_timesteps_coarse_chan_ranges(context: &CorrelatorContext, use_any_timestep: bool) -> Result<(Range<usize>, Range<usize>), MwaxStatsError> {
-    if context.num_common_good_timesteps > 0 {
-        Ok(((*context.common_good_timestep_indices.first().unwrap()..context.common_good_timestep_indices.last().unwrap() + 1), (*context.common_good_coarse_chan_indices.first().unwrap()..context.common_good_coarse_chan_indices.iter().last().unwrap() + 1)))
+/// We can limit the memory used too (especially good for testing on a laptop)
+pub fn get_timesteps_coarse_chan_ranges(context: &CorrelatorContext, use_any_timestep: bool, memory_limit_gb: Option<f32>) -> Result<(Range<usize>, Range<usize>), MwaxStatsError> {
+    // Get as many good/common timesteps that can fit into our memory limit    
+    let mut returned_timesteps = if context.num_common_good_timesteps > 0 {
+        *context.common_good_timestep_indices.first().unwrap()..context.common_good_timestep_indices.last().unwrap() + 1
     } else if use_any_timestep {
         if context.num_common_timesteps > 0 {
-            Ok(((*context.common_timestep_indices.first().unwrap()..context.common_timestep_indices.last().unwrap() + 1), (*context.common_coarse_chan_indices.first().unwrap()..context.common_coarse_chan_indices.iter().last().unwrap() + 1)))
+            *context.common_timestep_indices.first().unwrap()..context.common_timestep_indices.last().unwrap() + 1
         }
         else {
-            Err(MwaxStatsError::NoCommonGoodTimestepCCFound)
+             return Err(MwaxStatsError::NoCommonGoodTimestepCCFound)
         }
     } else {
-        Err(MwaxStatsError::NoCommonTimestepCCFound)
-    }    
+        return Err(MwaxStatsError::NoCommonTimestepCCFound)
+    };
+    debug!("{} Timesteps [{}:{}] selected",returned_timesteps.len(), returned_timesteps.start, returned_timesteps.end);
+    
+    // We pretty much always want as many coarse channels as possible
+    let returned_coarse_chans = if context.num_common_good_timesteps > 0 {
+        *context.common_good_coarse_chan_indices.first().unwrap()..context.common_good_coarse_chan_indices.iter().last().unwrap() + 1
+    } else if use_any_timestep {
+        if context.num_common_timesteps > 0 {
+            *context.common_coarse_chan_indices.first().unwrap()..context.common_coarse_chan_indices.iter().last().unwrap() + 1
+        }
+        else {
+             return Err(MwaxStatsError::NoCommonGoodTimestepCCFound)
+        }
+    } else {
+        return Err(MwaxStatsError::NoCommonTimestepCCFound)
+    };
+    debug!("{} Coarse channels: [{}:{}] selected",returned_coarse_chans.len(), returned_coarse_chans.start, returned_coarse_chans.end);
+
+    // Determine the number of timesteps we can fit into memory    
+    if memory_limit_gb.is_some() {
+        let memory_limit_bytes: usize = gigabytes_to_bytes(memory_limit_gb.unwrap());
+        let ts_bytes = context.num_timestep_coarse_chan_bytes * returned_coarse_chans.len();
+        let mwax_num_ts_in_memory: usize = memory_limit_bytes / ts_bytes;
+
+        debug!("Data selection will use {} GB of memory. Memory limit is {} GB. Number of timesteps that can fit in memory: {}.", bytes_to_gigabytes(ts_bytes * returned_timesteps.len()), memory_limit_gb.unwrap(), mwax_num_ts_in_memory);
+
+        if returned_timesteps.len() > mwax_num_ts_in_memory {
+            // Reduce the number of timesteps        
+            returned_timesteps.end = returned_timesteps.end - (returned_timesteps.len() - mwax_num_ts_in_memory);
+
+            debug!("Selected timesteps would have exceeded memory limit.");
+            debug!("Reducing timesteps to {} Timesteps [{}:{}] ({} GB)", returned_timesteps.len(), returned_timesteps.start, returned_timesteps.end, (returned_timesteps.len() as f32 * bytes_to_gigabytes(ts_bytes)));
+        }
+    }
+
+    Ok((returned_timesteps, returned_coarse_chans))
 }
 
 ///
@@ -56,7 +101,7 @@ pub fn get_corrected_data(
     correct_cable_lengths: bool,
     correct_digital_gains: bool,
     correct_passband_gains: bool,
-    correct_geometry: bool,
+    correct_geometry: bool,    
 ) -> ArrayBase<OwnedRepr<Jones<f32>>, Dim<[usize; 3]>> {
     info!("Correcting data for {} timesteps and {} coarse channels",timestep_range.len(),  coarse_chan_range.len());
 
@@ -109,6 +154,8 @@ pub fn get_corrected_data(
     let mut weight_array = flag_to_weight_array(flag_array.view(), weight_factor);
 
     let prep_ctx = PreprocessContext {
+        //Uncomment this is we need to do flagging, but I don't think we do
+        //aoflagger_strategy: match perform_rfi_flagging { true => Some("/usr/share/aoflagger/strategies/mwa-default.lua".to_string()), false=>None} ,
         array_pos: LatLngHeight {
             longitude_rad: MWA_LONG_RAD,
             latitude_rad: MWA_LAT_RAD,
@@ -192,6 +239,8 @@ pub fn get_data(
 mod tests {
     use birli::CorrelatorContext;
 
+    use crate::processing::{bytes_to_gigabytes, gigabytes_to_bytes};
+
     use super::get_timesteps_coarse_chan_ranges;
 
     const TEST_METAFITS_FILENAME: &str = "test_files/1244973688_1_timestep/1244973688.metafits";
@@ -215,7 +264,7 @@ mod tests {
         // Now get the ts anc cc ranges- passing use_any_timestep = False
         // The example fits file only has 1 timestep and is within the quaktime, so this should fail
         // as there will be no common good timesteps
-        let result1 = get_timesteps_coarse_chan_ranges(&context,false);
+        let result1 = get_timesteps_coarse_chan_ranges(&context,false, None);
         assert!(result1.is_err());        
     }
 
@@ -231,7 +280,7 @@ mod tests {
 
         // Now get the ts anc cc ranges- passing use_any_timestep = True
         // The example fits file only has 1 timestep and is within the quaktime, so this should succeed as we've said to use any (common) timestep        
-        let result = get_timesteps_coarse_chan_ranges(&context,true);
+        let result = get_timesteps_coarse_chan_ranges(&context,true, None);
         assert!(result.is_ok());
         let (ts_range, cc_range) = result.unwrap();
 
@@ -243,5 +292,15 @@ mod tests {
         assert_eq!(cc_range.len(), 1);
         assert_eq!(cc_range.start, 10);
         assert_eq!(cc_range.end, 11);
+    }
+
+    #[test]
+    fn test_bytes_to_gigabytes() {
+        assert_eq!(10.0, bytes_to_gigabytes(10_000_000_000));
+    }
+
+    #[test]
+    fn test_gigabytes_to_bytes() {
+        assert_eq!(10_000_000_000, gigabytes_to_bytes(10.0));
     }
 }

@@ -2,10 +2,10 @@
 // License, v. 2.0. If a copy of the MPL was not distributed with this
 // file, You can obtain one at http://mozilla.org/MPL/2.0/.
 use crate::processing;
-use file_utils::write::Write;
 use log::{debug, info, trace};
 use mwalib::CorrelatorContext;
 use std::fs::File;
+use std::io::{BufWriter, Write};
 use std::path::Path;
 
 /// Outputs one binary file for an observation.
@@ -23,6 +23,7 @@ pub fn output_fringes(
     context: &CorrelatorContext,
     output_dir: &str,
     use_any_timestep: bool,
+    max_memory_gb: Option<f32>,
     correct_cable_lengths: bool,
     correct_digital_gains: bool,
     correct_passband_gains: bool,
@@ -33,7 +34,8 @@ pub fn output_fringes(
     // Determine timestep and coarse channel range
     // For fringes we only want all the common good timesteps if possible; and one coarse channel
     let (timestep_range, coarse_chan_range) =
-        processing::get_timesteps_coarse_chan_ranges(context, use_any_timestep).unwrap();
+        processing::get_timesteps_coarse_chan_ranges(context, use_any_timestep, max_memory_gb)
+            .unwrap();
 
     // Output the timestep and coarse channel ranges and debug
     debug!(
@@ -74,8 +76,10 @@ pub fn output_fringes(
         coarse_chan_range.start * context.metafits_context.num_corr_fine_chans_per_coarse;
 
     // Create output file for writing
-    let mut output_file =
+    let output_file =
         File::create(&output_filename).expect("Unable to open fringe file for writing");
+
+    let mut writer = BufWriter::new(&output_file);
 
     // Loop through all of the baselines
     for (bl_index, bl) in context.metafits_context.baselines.iter().enumerate() {
@@ -124,18 +128,17 @@ pub fn output_fringes(
                 );
             }
 
+            let float_vec = vec![fine_chan_freq_mhz, xx_phase_deg, yy_phase_deg];
+
+            let float_bytes: Vec<u8> = floats_to_bytes(float_vec);
             // Write data to file
-            output_file
-                .write_f32(fine_chan_freq_mhz)
-                .expect("Error writing fine_chan_freq_MHz data");
-            output_file
-                .write_f32(xx_phase_deg)
-                .expect("Error writing xx_phase data");
-            output_file
-                .write_f32(yy_phase_deg)
-                .expect("Error writing yy_phase data");
+            writer
+                .write_all(&float_bytes)
+                .expect("Error writing fringe data");
         }
     }
+
+    writer.flush().expect("Error flushing output file to disk");
 
     info!(
         "Done! {} written.",
@@ -144,4 +147,13 @@ pub fn output_fringes(
             .to_str()
             .expect("Could not convert path into string")
     );
+}
+
+pub fn floats_to_bytes(floats: Vec<f32>) -> Vec<u8> {
+    let mut byte_array = Vec::new();
+    for f in floats {
+        // Use to_le_bytes() for little-endian or to_be_bytes() for big-endian
+        byte_array.extend_from_slice(&f.to_le_bytes());
+    }
+    byte_array
 }

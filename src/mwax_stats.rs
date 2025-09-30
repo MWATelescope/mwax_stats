@@ -73,6 +73,13 @@ where
                 .required(false)
                 .help("Use any timestep if no good (post quaktime) timestep can be found."),
         )
+        .arg(
+            Arg::with_name("memory-limit-gb")
+                .short("l")
+                .takes_value(true)
+                .required(false)
+                .help("Try to limit memory use to this number of GB."),
+        )
         .arg(Arg::with_name("fits-files").required(true).multiple(true));
 
     let arg_matches = app.get_matches_from(args);
@@ -84,6 +91,12 @@ where
     let output_dir = arg_matches.value_of("output-dir").unwrap();
     let use_any_timestep: bool = arg_matches.is_present("use-any-timestep");
     let fits_files: Vec<&str> = arg_matches.values_of("fits-files").unwrap().collect();
+    let max_memory_gb_str: Option<&str> = arg_matches.value_of("memory-limit-gb");
+    let max_memory_gb: Option<f32> = if max_memory_gb_str.is_some() {
+        Some(max_memory_gb_str.unwrap().parse().unwrap())
+    } else {
+        None
+    };
 
     // Although the command line args support it, and so does `processing::get_data()` we really want to only have 1 coarse channel of data passed in
     // at this stage. So lets check for it and fail if we get >1 channel
@@ -96,7 +109,7 @@ where
         processing::print_info(&context);
 
         // Always produce autocorrelations
-        autos::output_autocorrelations(&context, output_dir, use_any_timestep);
+        autos::output_autocorrelations(&context, output_dir, use_any_timestep, max_memory_gb);
 
         // Only produce fringes for calibrator observations (unless we are running in debug)
         if context.metafits_context.calibrator {
@@ -117,6 +130,7 @@ where
                 &context,
                 output_dir,
                 use_any_timestep,
+                max_memory_gb,
                 correct_cable_lengths,
                 correct_digital_gains,
                 correct_passband_gains,

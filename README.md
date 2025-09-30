@@ -16,15 +16,17 @@ The `mwax` correlator (via mwax_mover) exectutes mwax_stats for each visibility 
 
 ```bash
 USAGE:
-    mwax_stats <fits-files>... -m <metafits> -o <output-dir>
+    mwax_stats [FLAGS] [OPTIONS] <fits-files>... -m <metafits> -o <output-dir>
 
 FLAGS:
     -h, --help       Prints help information
+    -t               Use any timestep if no good (post quaktime) timestep can be found.
     -V, --version    Prints version information
 
 OPTIONS:
-    -m <metafits>          Sets the metafits file.
-    -o <output-dir>        Specify the directory to write output files to.
+    -l <memory-limit-gb>        Try to limit memory use to this number of GB.
+    -m <metafits>               Sets the metafits file.
+    -o <output-dir>             Specify the directory to write output files to.
 
 ARGS:
     <fits-files>...
